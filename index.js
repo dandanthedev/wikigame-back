@@ -1,5 +1,5 @@
 const { Server } = require('socket.io');
-import { createServer } from 'http';
+const { createServer } = require('http');
 
 const server = createServer();
 
