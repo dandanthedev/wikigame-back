@@ -47,12 +47,16 @@ function isHost(pin, socket) {
 function getUsersInLobby(pin) {
     const data = lobbys.get(pin);
     if (!data) return [];
-    const usersByName = [];
+    let usersByName = [];
 
     for (let socketId of data.sockets) {
         const socketName = socketIdToName(socketId);
         usersByName.push(socketName);
     }
+
+    //filter out nulls
+    usersByName = usersByName.filter((user) => user !== null);
+
     return usersByName;
 }
 
@@ -61,16 +65,25 @@ function socketIdToName(socketId) {
 }
 
 io.on('connection', (socket) => {
-    console.log('A user connected');
-    socket.on('disconnect', () => {
-        console.log('A user disconnected');
-
+    console.log(`user ${socket.id} connected`);
+    socket.on('disconnect', async () => {
+        console.log(`user ${socket.id} disconnected`);
         //remove all sockets from lobby
         lobbys.forEach((data, pin) => {
             if (data.sockets.includes(socket.id)) {
                 data.sockets.splice(data.sockets.indexOf(socket.id), 1);
+
             }
+            if (data.host === socket.id) {
+                //pick new host
+                const newHost = data.sockets[Math.floor(Math.random() * data.sockets.length)];
+                data.host = newHost;
+                //send message to new host
+                io.to(newHost).emit("host", true);
+            }
+            io.to(pin).emit("users", getUsersInLobby(pin));
         });
+
     });
 
     socket.on("name", (name) => {
@@ -110,11 +123,11 @@ io.on('connection', (socket) => {
         if (!socket.name) return socket.emit("noName");
         const data = lobbys.get(pin);
         if (!data) return socket.emit("joinError", "This game does not exist!");
-
-
+        let alreadyInLobby = false;
         //check if someone with the same name is already in the lobby
         for (let socketId of data.sockets) {
             const socketName = socketIdToName(socketId);
+
             if (socketName === socket.name) {
                 let randomChars = randomString(3);
                 socket.name = `${socket.name}-${randomChars}`;
@@ -232,6 +245,22 @@ io.on('connection', (socket) => {
         socket.emit("gotoScores");
     });
 
+    socket.on("giveUp", (pin) => {
+        if (!socket.name) return socket.emit("noName");
+        if (!pin) return socket.emit("giveUpError", "No pin provided!");
+
+        const lobby = lobbys.get(pin);
+        if (!lobby) return socket.emit("giveUpError", "This game does not exist!");
+        if (lobby.host !== socket.id) return socket.emit("giveUpError", "You are not the host of this game!");
+
+        lobby.scores.push({
+            id: socket.id,
+            name: socket.name,
+            clicks: "DNF",
+            route: "DNF"
+        });
+    });
+
     socket.on("scores", (pin) => {
         if (!socket.name) return socket.emit("noName");
         if (!pin) return socket.emit("scoresError", "No pin provided!");
@@ -258,6 +287,8 @@ io.on('connection', (socket) => {
             io.to(pin).emit("gameEnded");
         }
     });
+
+
 });
 
 
