@@ -157,22 +157,7 @@ io.on('connection', (socket) => {
         socket.emit("language", data.language || "en");
     });
 
-    socket.on("search", async (searchData) => {
-        if (!socket.name) return socket.emit("noName");
-        if (!searchData.searchTerm) return;
-        if (!searchData.language) return socket.emit("searchError", "Please select a language first.");
 
-
-        const res = await fetch(
-            ` https://${searchData.language}.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(searchData.searchTerm)}&limit=5&namespace=0&format=json`
-        );
-
-        const json = await res.json();
-
-        const results = json[1] || [];
-
-        socket.emit("searchResults", results);
-    });
 
     socket.on("getUsers", (pin) => {
         socket.emit("users", getUsersInLobby(pin));
@@ -180,11 +165,12 @@ io.on('connection', (socket) => {
 
     socket.on("sourceArticle", (data) => {
         if (!socket.name) return socket.emit("noName");
-        if (!data.pin || !data.article) return socket.emit("sourceArticleError", "No pin or article provided!");
+        if (!data.pin) return socket.emit("sourceArticleError", "No pin provided!");
+        if (!data.article) data.article = null;
         const lobby = lobbys.get(data.pin);
         if (!lobby) return socket.emit("sourceArticleError", "This game does not exist!");
         if (lobby.host !== socket.id) return socket.emit("sourceArticleError", "You are not the host of this game!");
-        lobby.sourceArticle = data.article.replaceAll(" ", "_");
+        lobby.sourceArticle = data.article?.replaceAll(" ", "_") ?? null;
 
         io.to(data.pin).emit("sourceArticle", lobby.sourceArticle);
 
@@ -192,11 +178,12 @@ io.on('connection', (socket) => {
 
     socket.on("destinationArticle", (data) => {
         if (!socket.name) return socket.emit("noName");
-        if (!data.pin || !data.article) return socket.emit("destinationArticleError", "No pin or article provided!");
+        if (!data.pin) return socket.emit("destinationArticleError", "No pin provided!");
+        if (!data.article) data.article = null;
         const lobby = lobbys.get(data.pin);
         if (!lobby) return socket.emit("destinationArticleError", "This game does not exist!");
         if (lobby.host !== socket.id) return socket.emit("destinationArticleError", "You are not the host of this game!");
-        lobby.destinationArticle = data.article.replaceAll(" ", "_");
+        lobby.destinationArticle = data.article?.replaceAll(" ", "_") ?? null;
         io.to(data.pin).emit("destinationArticle", lobby.destinationArticle);
     });
 
@@ -252,6 +239,7 @@ io.on('connection', (socket) => {
         const lobby = lobbys.get(pin);
         if (!lobby) return socket.emit("giveUpError", "This game does not exist!");
         if (lobby.host !== socket.id) return socket.emit("giveUpError", "You are not the host of this game!");
+        if (!lobby.scores) lobby.scores = [];
 
         lobby.scores.push({
             id: socket.id,
