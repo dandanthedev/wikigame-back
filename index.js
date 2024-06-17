@@ -64,6 +64,12 @@ function socketIdToName(socketId) {
     return io.sockets.sockets.get(socketId)?.name || null;
 }
 
+function createLobby(pin) {
+    lobbys.set(pin, {
+        sockets: []
+    });
+}
+
 io.on('connection', (socket) => {
     console.log(`user ${socket.id} connected`);
     socket.on('disconnect', async () => {
@@ -94,12 +100,8 @@ io.on('connection', (socket) => {
     socket.on("host", (name) => {
         if (!socket.name) return socket.emit("noName");
         const pin = generateGamePin();
-        lobbys.set(pin, {
-            name,
-            sockets: []
-        });
 
-
+        createLobby(pin);
 
         socket.emit("gameCreated", pin);
 
@@ -123,7 +125,6 @@ io.on('connection', (socket) => {
         if (!socket.name) return socket.emit("noName");
         const data = lobbys.get(pin);
         if (!data) return socket.emit("joinError", "This game does not exist!");
-        let alreadyInLobby = false;
         //check if someone with the same name is already in the lobby
         for (let socketId of data.sockets) {
             const socketName = socketIdToName(socketId);
@@ -272,12 +273,40 @@ io.on('connection', (socket) => {
 
 
         lobby.sockets.splice(lobby.sockets.indexOf(socket.id), 1);
+        socket.leave(pin);
+
         io.to(pin).emit("users", getUsersInLobby(pin));
 
         if (lobby.sockets.length === 0) {
             lobbys.delete(pin);
-            io.to(pin).emit("gameEnded");
         }
+    });
+
+    socket.on("newLobby", (pin) => {
+        if (!pin) return socket.emit("newLobbyError", "No pin provided!");
+        const lobby = lobbys.get(pin);
+
+        if (!lobby) return socket.emit("newLobbyError", "This game does not exist!");
+
+        //leave current lobby
+        lobby.sockets.splice(lobby.sockets.indexOf(socket.id), 1);
+        socket.leave(pin);
+        io.to(pin).emit("users", getUsersInLobby(pin));
+
+        if (lobby.sockets.length === 0) {
+            lobbys.delete(pin);
+        }
+
+        if (lobby.newLobby) return socket.emit("newLobby", lobby.newLobby);
+
+        const newLobby = generateGamePin();
+
+        createLobby(newLobby);
+
+        lobby.newLobby = newLobby;
+        socket.emit("gameCreated", newLobby);
+
+
     });
 
 
