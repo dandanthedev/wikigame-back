@@ -247,6 +247,10 @@ io.on('connection', (socket) => {
             clicks: "DNF",
             route: "DNF"
         });
+
+        io.to(pin).emit("scores", lobby.scores);
+
+        socket.emit("gotoScores");
     });
 
     socket.on("scores", (pin) => {
