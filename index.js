@@ -293,18 +293,21 @@ io.on('connection', (socket) => {
         socket.leave(pin);
         io.to(pin).emit("users", getUsersInLobby(pin));
 
+
+        if (lobby.newLobby) socket.emit("newLobby", lobby.newLobby);
+        else {
+
+            const newLobby = generateGamePin();
+
+            createLobby(newLobby);
+
+            lobby.newLobby = newLobby;
+            socket.emit("gameCreated", newLobby);
+        }
         if (lobby.sockets.length === 0) {
             lobbys.delete(pin);
         }
 
-        if (lobby.newLobby) return socket.emit("newLobby", lobby.newLobby);
-
-        const newLobby = generateGamePin();
-
-        createLobby(newLobby);
-
-        lobby.newLobby = newLobby;
-        socket.emit("gameCreated", newLobby);
 
 
     });
