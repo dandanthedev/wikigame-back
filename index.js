@@ -230,7 +230,7 @@ io.on('connection', (socket) => {
 
         io.to(data.gameId).emit("scores", lobby.scores);
 
-        socket.emit("gotoScores");
+        socket.emit("gotoScores", data.gameId);
     });
 
     socket.on("giveUp", (pin) => {
@@ -251,7 +251,7 @@ io.on('connection', (socket) => {
 
         io.to(pin).emit("scores", lobby.scores);
 
-        socket.emit("gotoScores");
+        socket.emit("gotoScores", pin);
     });
 
     socket.on("scores", (pin) => {
