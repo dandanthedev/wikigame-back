@@ -10,6 +10,8 @@ const io = new Server(server, {
 });
 
 const lobbies = new Map();
+const connectedSockets = new Map();
+const socketPages = new Map();
 
 const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -34,7 +36,7 @@ function isHost(pin, socket) {
     const data = lobbies.get(pin);
 
     if (data) {
-        if (data.host === socket.id) {
+        if (data.host === socket.userid) {
             return true;
         } else {
             return false;
@@ -61,7 +63,7 @@ function getUsersInLobby(pin) {
 }
 
 function socketIdToName(socketId) {
-    return io.sockets.sockets.get(socketId)?.name || null;
+    return connectedSockets.get(socketId) || null;
 }
 
 function createLobby(pin) {
@@ -71,16 +73,16 @@ function createLobby(pin) {
 }
 
 io.on('connection', (socket) => {
-    console.log(`user ${socket.id} connected`);
+    console.log(`user ${socket.userid} connected`);
     socket.on('disconnect', async () => {
-        console.log(`user ${socket.id} disconnected`);
+        console.log(`user ${socket.userid} disconnected`);
         //remove all sockets from lobby
         lobbies.forEach((data, pin) => {
-            if (data.sockets.includes(socket.id)) {
-                data.sockets.splice(data.sockets.indexOf(socket.id), 1);
+            if (data.sockets.includes(socket.userid)) {
+                data.sockets.splice(data.sockets.indexOf(socket.userid), 1);
 
             }
-            if (data.host === socket.id) {
+            if (data.host === socket.userid) {
                 //pick new host
                 const newHost = data.sockets[Math.floor(Math.random() * data.sockets.length)];
                 data.host = newHost;
@@ -92,18 +94,29 @@ io.on('connection', (socket) => {
 
     });
 
-    socket.on("name", (name) => {
+    socket.on("signOn", ({ name, id }) => {
         socket.name = name;
+        socket.userid = id;
         socket.emit("name", name);
+        socket.emit("id", id);
+        socket.join(id);
+        connectedSockets.set(socket.userid, name);
     });
 
-    socket.on("host", (name) => {
-        if (!socket.name) return socket.emit("noName");
+    socket.on("generateId", () => {
+        const id = randomString(10);
+        socket.userid = id;
+        socket.join(id);
+        socket.emit("id", id);
+    });
+
+
+    socket.on("host", () => {
         const pin = generateGamePin();
 
         createLobby(pin);
 
-        socket.emit("gameCreated", pin);
+        socket.emit("join", pin);
 
 
     });
@@ -115,6 +128,13 @@ io.on('connection', (socket) => {
         socket.emit("isHost", userIsHost);
     });
 
+    socket.on("discoverGame", (pin) => {
+        if (!socket.name) return socket.emit("noName");
+        const data = lobbies.get(pin);
+        if (data) return socket.emit("join", pin);
+        else return socket.emit("joinError", "This game does not exist!");
+    });
+
     socket.on("exists", (pin) => {
         if (!socket.name) return socket.emit("noName");
         const data = lobbies.get(pin);
@@ -122,9 +142,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on("join", (pin) => {
+        if (socket.gameId === pin) return;
         if (!socket.name) return socket.emit("noName");
         const data = lobbies.get(pin);
         if (!data) return socket.emit("joinError", "This game does not exist!");
+        socket.gameId = pin;
         //check if someone with the same name is already in the lobby
         for (let socketId of data.sockets) {
             const socketName = socketIdToName(socketId);
@@ -136,22 +158,56 @@ io.on('connection', (socket) => {
             }
         }
 
-        if (data.sockets.length === 0) data.host = socket.id;
+        if (data.sockets.length === 0) data.host = socket.userid;
 
-        data.sockets.push(socket.id);
+        data.sockets.push(socket.userid);
         socket.join(pin);
         socket.emit("join", pin);
 
         const usersByName = getUsersInLobby(pin);
 
         io.to(pin).emit("users", usersByName);
+
+        if (data.started) {
+            let articleToGo;
+            let route;
+            let clicks;
+            const socketPage = socketPages.get(socket.userid);
+            if (socketPage && socketPage.gameId === pin) {
+                articleToGo = socketPage.page;
+                route = socketPage.route;
+                clicks = socketPage.clicks;
+
+            } else {
+                articleToGo = data.sourceArticle;
+            }
+            socket.emit("start", "/wiki/" + articleToGo + "?lang=" + data.language + "&gameId=" + pin);
+
+        }
+    });
+
+    socket.on("getRoute", (pin) => {
+        if (!socket.name) return socket.emit("noName");
+
+        const socketPage = socketPages.get(socket.userid);
+        if (socketPage && socketPage.gameId === pin) {
+            socket.emit("route", {
+                route: socketPage.route,
+                clicks: socketPage.clicks
+            });
+        } else {
+            socket.emit("route", {
+                route: "",
+                clicks: 0
+            });
+        }
     });
 
     socket.on("gameDetails", (pin) => {
         if (!socket.name) return socket.emit("noName");
         const data = lobbies.get(pin);
         if (!data) return socket.emit("joinError", "This game does not exist!");
-        if (!data.sockets.includes(socket.id)) return socket.emit("joinError", "You are not in this game!");
+        if (!data.sockets.includes(socket.userid)) return socket.emit("joinError", "You are not in this game!");
 
         socket.emit("sourceArticle", data.sourceArticle);
         socket.emit("destinationArticle", data.destinationArticle);
@@ -170,7 +226,7 @@ io.on('connection', (socket) => {
         if (!data.article) data.article = null;
         const lobby = lobbies.get(data.pin);
         if (!lobby) return socket.emit("sourceArticleError", "This game does not exist!");
-        if (lobby.host !== socket.id) return socket.emit("sourceArticleError", "You are not the host of this game!");
+        if (lobby.host !== socket.userid) return socket.emit("sourceArticleError", "You are not the host of this game!");
         lobby.sourceArticle = data.article?.replaceAll(" ", "_") ?? null;
 
         io.to(data.pin).emit("sourceArticle", lobby.sourceArticle);
@@ -183,7 +239,7 @@ io.on('connection', (socket) => {
         if (!data.article) data.article = null;
         const lobby = lobbies.get(data.pin);
         if (!lobby) return socket.emit("destinationArticleError", "This game does not exist!");
-        if (lobby.host !== socket.id) return socket.emit("destinationArticleError", "You are not the host of this game!");
+        if (lobby.host !== socket.userid) return socket.emit("destinationArticleError", "You are not the host of this game!");
         lobby.destinationArticle = data.article?.replaceAll(" ", "_") ?? null;
         io.to(data.pin).emit("destinationArticle", lobby.destinationArticle);
     });
@@ -193,7 +249,7 @@ io.on('connection', (socket) => {
         if (!data.pin || !data.language) return socket.emit("languageError", "No pin or language provided!");
         const lobby = lobbies.get(data.pin);
         if (!lobby) return socket.emit("languageError", "This game does not exist!");
-        if (lobby.host !== socket.id) return socket.emit("languageError", "You are not the host of this game!");
+        if (lobby.host !== socket.userid) return socket.emit("languageError", "You are not the host of this game!");
         lobby.language = data.language;
         io.to(data.pin).emit("language", lobby.language);
     });
@@ -204,10 +260,28 @@ io.on('connection', (socket) => {
 
         const lobby = lobbies.get(pin);
         if (!lobby) return socket.emit("startError", "This game does not exist!");
-        if (lobby.host !== socket.id) return socket.emit("startError", "You are not the host of this game!");
+        if (lobby.host !== socket.userid) return socket.emit("startError", "You are not the host of this game!");
 
-        io.to(pin).emit("start", "/wiki/" + lobby.sourceArticle + "?lang=" + lobby.language + "&gameId=" + pin);
+        //set started in lobby to true
+        lobby.started = true;
 
+        lobbies.set(pin, lobby);
+
+
+        io.to(pin).emit
+            ("start", "/wiki/" + lobby.sourceArticle + "?lang=" + lobby.language + "&gameId=" + pin);
+
+    });
+
+    socket.on("pageNavigation", (data) => {
+        if (!socket.name) return socket.emit("noName");
+        if (data.clicks === 0) return;
+        // socket.page = {
+        //     gameId: data.gameId,
+        //     page: data.page
+        // }
+
+        socketPages.set(socket.userid, data);
 
     });
 
@@ -222,7 +296,7 @@ io.on('connection', (socket) => {
 
         if (!lobby.scores) lobby.scores = [];
         lobby.scores.push({
-            id: socket.id,
+            id: socket.userid,
             name: socket.name,
             clicks: data.clicks,
             route: data.route
@@ -242,7 +316,7 @@ io.on('connection', (socket) => {
         if (!lobby.scores) lobby.scores = [];
 
         lobby.scores.push({
-            id: socket.id,
+            id: socket.userid,
             name: socket.name,
             clicks: "DNF",
             route: "DNF"
@@ -271,7 +345,7 @@ io.on('connection', (socket) => {
         if (!lobby) return socket.emit("leaveError", "This game does not exist!");
 
 
-        lobby.sockets.splice(lobby.sockets.indexOf(socket.id), 1);
+        lobby.sockets.splice(lobby.sockets.indexOf(socket.userid), 1);
         socket.leave(pin);
 
         io.to(pin).emit("users", getUsersInLobby(pin));
@@ -288,12 +362,12 @@ io.on('connection', (socket) => {
         if (!lobby) return socket.emit("newLobbyError", "This game does not exist!");
 
         //leave current lobby
-        lobby.sockets.splice(lobby.sockets.indexOf(socket.id), 1);
+        lobby.sockets.splice(lobby.sockets.indexOf(socket.userid), 1);
         socket.leave(pin);
         io.to(pin).emit("users", getUsersInLobby(pin));
 
 
-        if (lobby.newLobby) socket.emit("newLobby", lobby.newLobby);
+        if (lobby.newLobby) socket.emit("join", lobby.newLobby);
         else {
 
             const newLobby = generateGamePin();
@@ -301,7 +375,7 @@ io.on('connection', (socket) => {
             createLobby(newLobby);
 
             lobby.newLobby = newLobby;
-            socket.emit("gameCreated", newLobby);
+            socket.emit("join", newLobby);
         }
         if (lobby.sockets.length === 0) {
             lobbies.delete(pin);
