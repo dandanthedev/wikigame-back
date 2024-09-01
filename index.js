@@ -87,7 +87,7 @@ io.on('connection', (socket) => {
                 const newHost = data.sockets[Math.floor(Math.random() * data.sockets.length)];
                 data.host = newHost;
                 //send message to new host
-                io.to(newHost).emit("host", true);
+                io.to(newHost).emit("isHost", true);
             }
             io.to(pin).emit("users", getUsersInLobby(pin));
         });
@@ -347,6 +347,12 @@ io.on('connection', (socket) => {
 
         lobby.sockets.splice(lobby.sockets.indexOf(socket.userid), 1);
         socket.leave(pin);
+
+        if (lobby.host === socket.userid && lobby.sockets.length > 0) {
+            const random = Math.floor(Math.random() * lobby.sockets.length);
+            lobby.host = lobby.sockets[random];
+            io.to(lobby.host).emit("isHost", true);
+        }
 
         io.to(pin).emit("users", getUsersInLobby(pin));
 
