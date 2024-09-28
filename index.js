@@ -307,7 +307,9 @@ io.on('connection', (socket) => {
         socket.emit("gotoScores", data.gameId);
     });
 
-    socket.on("giveUp", (pin) => {
+    socket.on("giveUp", ({ id, route }) => {
+        const pin = id;
+
         if (!socket.name) return socket.emit("noName");
         if (!pin) return socket.emit("giveUpError", "No pin provided!");
 
@@ -319,7 +321,7 @@ io.on('connection', (socket) => {
             id: socket.userid,
             name: socket.name,
             clicks: "DNF",
-            route: "DNF"
+            route
         });
 
         io.to(pin).emit("scores", lobby.scores);
