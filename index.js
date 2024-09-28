@@ -72,6 +72,28 @@ function createLobby(pin) {
     });
 }
 
+function sendLeaderboaard(pin) {
+    const data = lobbies.get(pin);
+    if (!data) return;
+
+    const scores = data.scores;
+
+    scores.sort((a, b) => b.clicks - a.clicks);
+
+    //reverse order so least clicks are at the top
+    scores.reverse();
+
+    //move DNF's to the end
+    scores.forEach((score, index) => {
+        if (score.clicks === "DNF") {
+            scores.splice(index, 1);
+            scores.push(score);
+        }
+    });
+
+    io.to(pin).emit("scores", scores);
+}
+
 io.on('connection', (socket) => {
     console.log(`user ${socket.userid} connected`);
     socket.on('disconnect', async () => {
@@ -302,7 +324,7 @@ io.on('connection', (socket) => {
             route: data.route
         });
 
-        io.to(data.gameId).emit("scores", lobby.scores);
+        sendLeaderboaard(data.gameId);
 
         socket.emit("gotoScores", data.gameId);
     });
@@ -324,7 +346,7 @@ io.on('connection', (socket) => {
             route
         });
 
-        io.to(pin).emit("scores", lobby.scores);
+        sendLeaderboaard(pin);
 
         socket.emit("gotoScores", pin);
     });
@@ -336,7 +358,7 @@ io.on('connection', (socket) => {
         const lobby = lobbies.get(pin);
         if (!lobby) return socket.emit("scoresError", "This game does not exist!");
 
-        socket.emit("scores", lobby.scores || []);
+        sendLeaderboaard(pin);
     });
 
     socket.on("leave", (pin) => {
