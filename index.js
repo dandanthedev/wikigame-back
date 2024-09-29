@@ -78,7 +78,15 @@ function sendLeaderboaard(pin, user) {
 
     const scores = data.scores;
 
-    scores.sort((a, b) => b.clicks - a.clicks);
+    //sort by clicks, if tie, sort by time
+    scores.sort((a, b) => {
+        if (a.clicks === b.clicks) {
+            return b.time - a.time;
+        } else {
+            return b.clicks - a.clicks;
+        }
+    });
+
 
     //reverse order so least clicks are at the top
     scores.reverse();
@@ -90,6 +98,7 @@ function sendLeaderboaard(pin, user) {
             scores.push(score);
         }
     });
+
 
     io.to(pin).emit("scores", scores);
 
@@ -279,12 +288,14 @@ io.on('connection', (socket) => {
 
         //set started in lobby to true
         lobby.started = true;
+        lobby.startTime = Date.now() + 3000;
 
         lobbies.set(pin, lobby);
 
 
         io.to(pin).emit
             ("start", "/wiki/" + lobby.sourceArticle + "?lang=" + lobby.language + "&gameId=" + pin);
+
 
     });
 
@@ -314,7 +325,8 @@ io.on('connection', (socket) => {
             id: socket.userid,
             name: socket.name,
             clicks: data.clicks,
-            route: data.route
+            route: data.route,
+            time: Date.now(),
         });
 
         sendLeaderboaard(data.gameId, socket);
@@ -336,7 +348,8 @@ io.on('connection', (socket) => {
             id: socket.userid,
             name: socket.name,
             clicks: "DNF",
-            route
+            route,
+            time: Date.now(),
         });
 
         sendLeaderboaard(pin, socket);
@@ -352,6 +365,7 @@ io.on('connection', (socket) => {
         if (!lobby) return socket.emit("scoresError", "This game does not exist!");
 
         sendLeaderboaard(pin, socket);
+        socket.emit("started", lobby.startTime);
     });
 
     socket.on("leave", (pin) => {
