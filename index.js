@@ -72,7 +72,7 @@ function createLobby(pin) {
     });
 }
 
-function sendLeaderboaard(pin) {
+function sendLeaderboaard(pin, user) {
     const data = lobbies.get(pin);
     if (!data) return;
 
@@ -92,10 +92,13 @@ function sendLeaderboaard(pin) {
     });
 
     io.to(pin).emit("scores", scores);
+
+    if (user) {
+        user.emit("scores", scores);
+    }
 }
 
 io.on('connection', (socket) => {
-    console.log(`user ${socket.userid} connected`);
     socket.on('disconnect', async () => {
         console.log(`user ${socket.userid} disconnected`);
         //remove all sockets from lobby
@@ -116,11 +119,12 @@ io.on('connection', (socket) => {
 
     });
 
-    socket.on("signOn", ({ name, id }) => {
+    socket.on("signOn", async ({ name, id }) => {
         socket.name = name;
         socket.userid = id;
         socket.emit("name", name);
         socket.emit("id", id);
+        io.to(id).emit("newSignOn");
         socket.join(id);
         connectedSockets.set(socket.userid, name);
     });
@@ -169,16 +173,6 @@ io.on('connection', (socket) => {
         const data = lobbies.get(pin);
         if (!data) return socket.emit("joinError", "This game does not exist!");
         socket.gameId = pin;
-        //check if someone with the same name is already in the lobby
-        for (let socketId of data.sockets) {
-            const socketName = socketIdToName(socketId);
-
-            if (socketName === socket.name) {
-                let randomChars = randomString(3);
-                socket.name = `${socket.name}-${randomChars}`;
-                socket.emit("name", socket.name);
-            }
-        }
 
         if (data.sockets.length === 0) data.host = socket.userid;
 
@@ -324,7 +318,7 @@ io.on('connection', (socket) => {
             route: data.route
         });
 
-        sendLeaderboaard(data.gameId);
+        sendLeaderboaard(data.gameId, socket);
 
         socket.emit("gotoScores", data.gameId);
     });
@@ -346,7 +340,7 @@ io.on('connection', (socket) => {
             route
         });
 
-        sendLeaderboaard(pin);
+        sendLeaderboaard(pin, socket);
 
         socket.emit("gotoScores", pin);
     });
@@ -358,7 +352,7 @@ io.on('connection', (socket) => {
         const lobby = lobbies.get(pin);
         if (!lobby) return socket.emit("scoresError", "This game does not exist!");
 
-        sendLeaderboaard(pin);
+        sendLeaderboaard(pin, socket);
     });
 
     socket.on("leave", (pin) => {
