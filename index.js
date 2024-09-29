@@ -233,6 +233,10 @@ io.on('connection', (socket) => {
         if (!data) return socket.emit("joinError", "This game does not exist!");
         if (!data.sockets.includes(socket.userid)) return socket.emit("joinError", "You are not in this game!");
 
+        socket.emit("exists", true);
+        socket.emit("isHost", isHost(pin, socket));
+        socket.emit("users", getUsersInLobby(pin));
+
         socket.emit("sourceArticle", data.sourceArticle);
         socket.emit("destinationArticle", data.destinationArticle);
         socket.emit("language", data.language || "en");
