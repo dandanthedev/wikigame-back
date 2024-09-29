@@ -124,7 +124,6 @@ io.on('connection', (socket) => {
         socket.userid = id;
         socket.emit("name", name);
         socket.emit("id", id);
-        io.to(id).emit("newSignOn");
         socket.join(id);
         connectedSockets.set(socket.userid, name);
     });
