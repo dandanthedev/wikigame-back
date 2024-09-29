@@ -275,7 +275,11 @@ io.on('connection', (socket) => {
         if (!lobby) return socket.emit("languageError", "This game does not exist!");
         if (lobby.host !== socket.userid) return socket.emit("languageError", "You are not the host of this game!");
         lobby.language = data.language;
+        lobby.sourceArticle = null;
+        lobby.destinationArticle = null;
         io.to(data.pin).emit("language", lobby.language);
+        io.to(data.pin).emit("sourceArticle", null);
+        io.to(data.pin).emit("destinationArticle", null);
     });
 
     socket.on("start", (pin) => {
