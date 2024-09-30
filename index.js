@@ -295,6 +295,7 @@ io.on('connection', (socket) => {
         if (lobby.host !== socket.userid) return socket.emit("startError", "You are not the host of this game!");
 
         //set started in lobby to true
+        if (!lobby.language) lobby.language = "en";
         lobby.started = true;
         lobby.startTime = Date.now() + 3000;
 
