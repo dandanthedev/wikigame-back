@@ -12,6 +12,7 @@ const io = new Server(server, {
 const lobbies = new Map();
 const connectedSockets = new Map();
 const socketPages = new Map();
+const userScores = new Map();
 
 const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -213,18 +214,12 @@ io.on('connection', (socket) => {
     socket.on("getRoute", (pin) => {
         if (!socket.name) return socket.emit("noName");
 
-        const socketPage = socketPages.get(socket.userid);
-        if (socketPage && socketPage.gameId === pin) {
-            socket.emit("route", {
-                route: socketPage.route,
-                clicks: socketPage.clicks
-            });
-        } else {
-            socket.emit("route", {
-                route: "",
-                clicks: 0
-            });
-        }
+        const score = userScores.get(`${socket.userid}-${pin}`);
+        socket.emit("route", {
+            route: score?.route ?? "",
+            clicks: score?.clicks ?? 0
+        });
+
     });
 
     socket.on("gameDetails", (pin) => {
@@ -310,37 +305,47 @@ io.on('connection', (socket) => {
 
     socket.on("pageNavigation", (data) => {
         if (!socket.name) return socket.emit("noName");
-        if (data.clicks === 0) return;
-        // socket.page = {
-        //     gameId: data.gameId,
-        //     page: data.page
-        // }
 
         socketPages.set(socket.userid, data);
+        const score = userScores.get(`${socket.userid}-${data.gameId}`);
+        const lobby = lobbies.get(data.gameId);
+
+        if (data.page === lobby.sourceArticle) return; //if just starting, don't count
+
+        userScores.set(`${socket.userid}-${data.gameId}`, {
+            clicks: score?.clicks || 0 + 1,
+            route: `${!score?.route ? lobby.sourceArticle.replaceAll("_", " ") : score.route} -> ${data.page.replaceAll("_", " ")}`
+        });
+
+
 
     });
 
     socket.on("score", (data) => {
         if (!socket.name) return socket.emit("noName");
-        if (!data.gameId) return socket.emit("scoreError", "No gameId provided!");
+        if (!data) return socket.emit("scoreError", "No gameId provided!");
 
-        if (!data.clicks || !data.route) return socket.emit("scoreError", "No clicks or route provided!");
+        // if (!data.clicks || !data.route) return socket.emit("scoreError", "No clicks or route provided!");
 
-        const lobby = lobbies.get(data.gameId);
+        const lobby = lobbies.get(data);
         if (!lobby) return socket.emit("scoreError", "This game does not exist!");
 
         if (!lobby.scores) lobby.scores = [];
+
+        const score = userScores.get(`${socket.userid}-${data}`);
+
         lobby.scores.push({
             id: socket.userid,
             name: socket.name,
-            clicks: data.clicks,
-            route: data.route,
+            //include the click to the target page
+            clicks: (score?.clicks || 0) + 1,
+            route: `${score?.route ?? lobby.sourceArticle} -> ${lobby.destinationArticle.replaceAll("_", " ")} 🏁`,
             time: Date.now(),
         });
 
-        sendLeaderboaard(data.gameId, socket);
+        sendLeaderboaard(data, socket);
 
-        socket.emit("gotoScores", data.gameId);
+        socket.emit("gotoScores", data);
     });
 
     socket.on("giveUp", ({ id, route }) => {
