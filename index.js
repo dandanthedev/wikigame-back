@@ -311,10 +311,11 @@ io.on('connection', (socket) => {
         const lobby = lobbies.get(data.gameId);
 
         if (data.page === lobby.sourceArticle) return; //if just starting, don't count
-
+        if (data.page === score?.currentPage) return; //dont count refresh dingen
         userScores.set(`${socket.userid}-${data.gameId}`, {
             clicks: score?.clicks || 0 + 1,
-            route: `${!score?.route ? lobby.sourceArticle.replaceAll("_", " ") : score.route} -> ${data.page.replaceAll("_", " ")}`
+            route: `${!score?.route ? lobby.sourceArticle.replaceAll("_", " ") : score.route} -> ${data.page.replaceAll("_", " ")}`,
+            currentPage: data.page,
         });
 
 
