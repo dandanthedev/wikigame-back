@@ -326,6 +326,7 @@ io.on('connection', (socket) => {
     function assignCheck(check) {
         //assign to new random user
         const lobby = lobbies.get(check.pin);
+        if (!lobby) return;
         const random = Math.floor(Math.random() * lobby.sockets.length);
         const randomUser = lobby.sockets[random];
         io.to(randomUser).emit("checkNavigation", {
