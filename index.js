@@ -13,6 +13,7 @@ const lobbies = new Map();
 const connectedSockets = new Map();
 const socketPages = new Map();
 const userScores = new Map();
+const checkNavigation = new Map();
 
 const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -105,6 +106,25 @@ function sendLeaderboaard(pin, user) {
 
     if (user) {
         user.emit("scores", scores);
+    }
+}
+
+function removeUserFromLobby(userid, pin, socket) {
+    const lobby = lobbies.get(pin);
+    if (!lobby) return;
+    if (socket) socket.leave(pin);
+    lobby.sockets.splice(lobby.sockets.indexOf(userid), 1);
+
+    if (lobby.host === userid && lobby.sockets.length > 0) {
+        const random = Math.floor(Math.random() * lobby.sockets.length);
+        lobby.host = lobby.sockets[random];
+        io.to(lobby.host).emit("isHost", true);
+    }
+
+    io.to(pin).emit("users", getUsersInLobby(pin));
+
+    if (lobby.sockets.length === 0) {
+        lobbies.delete(pin);
     }
 }
 
@@ -303,6 +323,40 @@ io.on('connection', (socket) => {
 
     });
 
+    socket.on("checkNavigation", (data) => {
+        if (!socket.name) return socket.emit("noName");
+        const { id, error, result } = data;
+        const check = checkNavigation.get(id);
+        if (!check) return socket.emit("checkNavigationError", "No check found");
+        if (error) {
+            if (check.i > 2) {
+                checkNavigation.delete(id);
+                //welp, guess the cheaters win this time
+                return;
+            }
+            //assign to new random user
+            const random = Math.floor(Math.random() * lobbies.get(id).sockets.length);
+            const randomUser = lobbies.get(id).sockets[random];
+            io.to(randomUser).emit("checkNavigation", {
+                id,
+                from: result.from,
+                to: result.to,
+                lang: result.lang,
+            });
+            checkNavigation.set(id, {
+                id: randomUser,
+                i: parseInt(check.i) || 0 + 1,
+            });
+        }
+        if (result === false) {
+            //kick user for cheating
+            removeUserFromLobby(check.targetUser, check.pin);
+            checkNavigation.delete(id);
+            io.to(check.targetUser).emit("cheater");
+
+        }
+    });
+
     socket.on("pageNavigation", (data) => {
         if (!socket.name) return socket.emit("noName");
 
@@ -310,8 +364,30 @@ io.on('connection', (socket) => {
         const score = userScores.get(`${socket.userid}-${data.gameId}`);
         const lobby = lobbies.get(data.gameId);
 
-        if (data.page === lobby.sourceArticle) return; //if just starting, don't count
+
+
+        if (data.page === lobby?.sourceArticle) return; //if just starting, don't count
         if (data.page === score?.currentPage) return; //dont count refresh dingen
+
+
+        //pick a random person from the lobby
+        const random = Math.floor(Math.random() * lobby.sockets.length);
+        const randomUser = lobby.sockets[random];
+        //ask to check this
+        io.to(randomUser).emit("checkNavigation", {
+            id: `${socket.userid}-${data.gameId}`,
+            from: score?.currentPage ?? lobby.sourceArticle,
+            to: data.page,
+            redirectedFrom: data.redirectedFrom,
+            lang: lobby.language,
+        });
+        checkNavigation.set(`${socket.userid}-${data.gameId}`, {
+            id: randomUser,
+            targetUser: socket.userid,
+            pin: data.gameId,
+            i: 0,
+        });
+
         userScores.set(`${socket.userid}-${data.gameId}`, {
             clicks: score?.clicks || 0 + 1,
             route: `${!score?.route ? lobby.sourceArticle.replaceAll("_", " ") : score.route} -> ${data.page.replaceAll("_", " ")}`,
@@ -390,21 +466,9 @@ io.on('connection', (socket) => {
         const lobby = lobbies.get(pin);
         if (!lobby) return socket.emit("leaveError", "This game does not exist!");
 
+        removeUserFromLobby(socket.userid, pin, socket);
 
-        lobby.sockets.splice(lobby.sockets.indexOf(socket.userid), 1);
-        socket.leave(pin);
 
-        if (lobby.host === socket.userid && lobby.sockets.length > 0) {
-            const random = Math.floor(Math.random() * lobby.sockets.length);
-            lobby.host = lobby.sockets[random];
-            io.to(lobby.host).emit("isHost", true);
-        }
-
-        io.to(pin).emit("users", getUsersInLobby(pin));
-
-        if (lobby.sockets.length === 0) {
-            lobbies.delete(pin);
-        }
     });
 
     socket.on("newLobby", (pin) => {
