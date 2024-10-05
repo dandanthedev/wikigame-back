@@ -328,6 +328,7 @@ io.on('connection', (socket) => {
         const { id, error, result } = data;
         const check = checkNavigation.get(id);
         if (!check) return socket.emit("checkNavigationError", "No check found");
+        if (check.id !== socket.id) return socket.emit("checkNavigationError", "This check is not for you!");
         if (error) {
             if (check.i > 2) {
                 checkNavigation.delete(id);
