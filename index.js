@@ -323,6 +323,24 @@ io.on('connection', (socket) => {
 
     });
 
+    function assignCheck(check) {
+        //assign to new random user
+        const lobby = lobbies.get(check.pin);
+        const random = Math.floor(Math.random() * lobby.sockets.length);
+        const randomUser = lobby.sockets[random];
+        io.to(randomUser).emit("checkNavigation", {
+            id: check.id,
+            from: check.from,
+            to: check.to,
+            redirectedFrom: check.redirectedFrom,
+            lang: check.lang,
+        });
+        checkNavigation.set(check.id, {
+            id: randomUser,
+            i: parseInt(check.i) || 0 + 1,
+        });
+    }
+
     socket.on("checkNavigation", (data) => {
         if (!socket.name) return socket.emit("noName");
         const { id, error, result } = data;
@@ -335,26 +353,15 @@ io.on('connection', (socket) => {
                 //welp, guess the cheaters win this time
                 return;
             }
-            //assign to new random user
-            const random = Math.floor(Math.random() * lobbies.get(id).sockets.length);
-            const randomUser = lobbies.get(id).sockets[random];
-            io.to(randomUser).emit("checkNavigation", {
-                id,
-                from: result.from,
-                to: result.to,
-                lang: result.lang,
-            });
-            checkNavigation.set(id, {
-                id: randomUser,
-                i: parseInt(check.i) || 0 + 1,
-            });
+
+            assignCheck(check);
         }
         if (result === false) {
+            if (check.i < 2) assignCheck(check); //sure bout that?
             //kick user for cheating
             removeUserFromLobby(check.targetUser, check.pin);
             checkNavigation.delete(id);
             io.to(check.targetUser).emit("cheater");
-
         }
     });
 
@@ -371,25 +378,29 @@ io.on('connection', (socket) => {
         if (data.page === score?.currentPage) return; //dont count refresh dingen
 
 
-        if (Math.random() > 0.5) {
-            //pick a random person from the lobby
-            const random = Math.floor(Math.random() * lobby.sockets.length);
-            const randomUser = lobby.sockets[random];
-            //ask to check this
-            io.to(randomUser).emit("checkNavigation", {
-                id: `${socket.userid}-${data.gameId}`,
-                from: score?.currentPage ?? lobby.sourceArticle,
-                to: data.page,
-                redirectedFrom: data.redirectedFrom,
-                lang: lobby.language,
-            });
-            checkNavigation.set(`${socket.userid}-${data.gameId}`, {
-                id: randomUser,
-                targetUser: socket.userid,
-                pin: data.gameId,
-                i: 0,
-            });
-        }
+        //pick a random person from the lobby
+        const random = Math.floor(Math.random() * lobby.sockets.length);
+        const randomUser = lobby.sockets[random];
+        //ask to check this
+        io.to(randomUser).emit("checkNavigation", {
+            id: `${socket.userid}-${data.gameId}`,
+            from: score?.currentPage ?? lobby.sourceArticle,
+            to: data.page,
+            redirectedFrom: data.redirectedFrom,
+            lang: lobby.language,
+        });
+        checkNavigation.set(`${socket.userid}-${data.gameId}`, {
+            id: randomUser,
+            targetUser: socket.userid,
+            pin: data.gameId,
+            i: 0,
+
+            from: score?.currentPage ?? lobby.sourceArticle,
+            to: data.page,
+            redirectedFrom: data.redirectedFrom,
+            lang: lobby.language,
+        });
+
 
         userScores.set(`${socket.userid}-${data.gameId}`, {
             clicks: score?.clicks || 0 + 1,
