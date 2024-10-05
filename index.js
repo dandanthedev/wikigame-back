@@ -328,7 +328,7 @@ io.on('connection', (socket) => {
         const { id, error, result } = data;
         const check = checkNavigation.get(id);
         if (!check) return socket.emit("checkNavigationError", "No check found");
-        if (check.id !== socket.id) return socket.emit("checkNavigationError", "This check is not for you!");
+        if (check.id !== socket.userid) return socket.emit("checkNavigationError", "This check is not for you!");
         if (error) {
             if (check.i > 2) {
                 checkNavigation.delete(id);
@@ -366,28 +366,30 @@ io.on('connection', (socket) => {
         const lobby = lobbies.get(data.gameId);
 
 
-
+        if (!lobby) return socket.emit("pageNavigationError", "This game does not exist!");
         if (data.page === lobby?.sourceArticle) return; //if just starting, don't count
         if (data.page === score?.currentPage) return; //dont count refresh dingen
 
 
-        //pick a random person from the lobby
-        const random = Math.floor(Math.random() * lobby.sockets.length);
-        const randomUser = lobby.sockets[random];
-        //ask to check this
-        io.to(randomUser).emit("checkNavigation", {
-            id: `${socket.userid}-${data.gameId}`,
-            from: score?.currentPage ?? lobby.sourceArticle,
-            to: data.page,
-            redirectedFrom: data.redirectedFrom,
-            lang: lobby.language,
-        });
-        checkNavigation.set(`${socket.userid}-${data.gameId}`, {
-            id: randomUser,
-            targetUser: socket.userid,
-            pin: data.gameId,
-            i: 0,
-        });
+        if (Math.random() > 0.5) {
+            //pick a random person from the lobby
+            const random = Math.floor(Math.random() * lobby.sockets.length);
+            const randomUser = lobby.sockets[random];
+            //ask to check this
+            io.to(randomUser).emit("checkNavigation", {
+                id: `${socket.userid}-${data.gameId}`,
+                from: score?.currentPage ?? lobby.sourceArticle,
+                to: data.page,
+                redirectedFrom: data.redirectedFrom,
+                lang: lobby.language,
+            });
+            checkNavigation.set(`${socket.userid}-${data.gameId}`, {
+                id: randomUser,
+                targetUser: socket.userid,
+                pin: data.gameId,
+                i: 0,
+            });
+        }
 
         userScores.set(`${socket.userid}-${data.gameId}`, {
             clicks: score?.clicks || 0 + 1,
