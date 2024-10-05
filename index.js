@@ -327,8 +327,13 @@ io.on('connection', (socket) => {
         //assign to new random user
         const lobby = lobbies.get(check.pin);
         if (!lobby) return;
-        const random = Math.floor(Math.random() * lobby.sockets.length);
-        const randomUser = lobby.sockets[random];
+
+        let randomUser = socket.userid;
+        do {
+            const random = Math.floor(Math.random() * lobby.sockets.length);
+            randomUser = lobby.sockets[random];
+        } while (randomUser === socket.userid);
+
         io.to(randomUser).emit("checkNavigation", {
             id: check.id,
             from: check.from,
@@ -337,8 +342,9 @@ io.on('connection', (socket) => {
             lang: check.lang,
         });
         checkNavigation.set(check.id, {
+            ...check,
             id: randomUser,
-            i: parseInt(check.i) || 0 + 1,
+            i: check.i + 1,
         });
     }
 
@@ -346,19 +352,20 @@ io.on('connection', (socket) => {
         if (!socket.name) return socket.emit("noName");
         const { id, error, result } = data;
         const check = checkNavigation.get(id);
+        console.log(check)
         if (!check) return socket.emit("checkNavigationError", "No check found");
         if (check.id !== socket.userid) return socket.emit("checkNavigationError", "This check is not for you!");
         if (error) {
-            if (check.i > 2) {
+            if (check.i > 4) {
+                removeUserFromLobby(check.targetUser, check.pin);
                 checkNavigation.delete(id);
-                //welp, guess the cheaters win this time
-                return;
+                io.to(check.targetUser).emit("cheater");
             }
 
-            assignCheck(check);
+            return assignCheck(check);
         }
         if (result === false) {
-            if (check.i < 2) assignCheck(check); //sure bout that?
+            if (check.i < 2) return assignCheck(check); //sure bout that?
             //kick user for cheating
             removeUserFromLobby(check.targetUser, check.pin);
             checkNavigation.delete(id);
@@ -379,28 +386,33 @@ io.on('connection', (socket) => {
         if (data.page === score?.currentPage) return; //dont count refresh dingen
 
 
-        //pick a random person from the lobby
-        const random = Math.floor(Math.random() * lobby.sockets.length);
-        const randomUser = lobby.sockets[random];
-        //ask to check this
-        io.to(randomUser).emit("checkNavigation", {
-            id: `${socket.userid}-${data.gameId}`,
-            from: score?.currentPage ?? lobby.sourceArticle,
-            to: data.page,
-            redirectedFrom: data.redirectedFrom,
-            lang: lobby.language,
-        });
-        checkNavigation.set(`${socket.userid}-${data.gameId}`, {
-            id: randomUser,
-            targetUser: socket.userid,
-            pin: data.gameId,
-            i: 0,
+        if (lobby.sockets.length > 1) {
+            //pick a random person from the lobby that is not the current user
+            let randomUser = socket.userid;
+            do {
+                const random = Math.floor(Math.random() * lobby.sockets.length);
+                randomUser = lobby.sockets[random];
+            } while (randomUser === socket.userid);
+            //ask to check this
+            io.to(randomUser).emit("checkNavigation", {
+                id: `${socket.userid}-${data.gameId}`,
+                from: score?.currentPage ?? lobby.sourceArticle,
+                to: data.page,
+                redirectedFrom: data.redirectedFrom,
+                lang: lobby.language,
+            });
+            checkNavigation.set(`${socket.userid}-${data.gameId}`, {
+                id: randomUser,
+                targetUser: socket.userid,
+                pin: data.gameId,
+                i: 0,
 
-            from: score?.currentPage ?? lobby.sourceArticle,
-            to: data.page,
-            redirectedFrom: data.redirectedFrom,
-            lang: lobby.language,
-        });
+                from: score?.currentPage ?? lobby.sourceArticle,
+                to: data.page,
+                redirectedFrom: data.redirectedFrom,
+                lang: lobby.language,
+            });
+        }
 
 
         userScores.set(`${socket.userid}-${data.gameId}`, {
