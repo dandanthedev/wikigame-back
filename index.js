@@ -420,6 +420,8 @@ io.on('connection', (socket) => {
 
 
         if (lobby.newLobby) socket.emit("join", lobby.newLobby);
+
+
         else {
 
             const newLobby = generateGamePin();
@@ -429,6 +431,16 @@ io.on('connection', (socket) => {
             lobby.newLobby = newLobby;
             socket.emit("join", newLobby);
         }
+
+        const newLobby = lobbies.get(lobby.newLobby);
+
+        //set host
+        if (socket.userid === lobby.host && newLobby.host !== socket.userid) {
+            io.to(newLobby.host).emit("isHost", false);
+            newLobby.host = socket.userid;
+            io.to(newLobby.host).emit("isHost", true);
+        }
+
         if (lobby.sockets.length === 0) {
             lobbies.delete(pin);
         }
