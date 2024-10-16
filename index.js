@@ -371,6 +371,7 @@ io.on('connection', (socket) => {
             checkNavigation.delete(id);
             io.to(check.targetUser).emit("cheater");
         }
+
     });
 
     socket.on("pageNavigation", (data) => {
@@ -414,9 +415,11 @@ io.on('connection', (socket) => {
             });
         }
 
+        const clicks = score?.clicks ?? 0;
+
 
         userScores.set(`${socket.userid}-${data.gameId}`, {
-            clicks: score?.clicks || 0 + 1,
+            clicks: clicks + 1,
             route: `${!score?.route ? lobby.sourceArticle.replaceAll("_", " ") : score.route} -> ${data.page.replaceAll("_", " ")}`,
             currentPage: data.page,
         });
