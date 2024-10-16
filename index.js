@@ -11,7 +11,6 @@ const io = new Server(server, {
 
 const lobbies = new Map();
 const connectedSockets = new Map();
-const socketPages = new Map();
 const userScores = new Map();
 const checkNavigation = new Map();
 
@@ -109,7 +108,7 @@ function sendLeaderboaard(pin, user) {
     }
 }
 
-function removeUserFromLobby(userid, pin, socket) {
+function removeUserFromLobby(userid, pin, socket, removeScore = false) {
     const lobby = lobbies.get(pin);
     if (!lobby) return;
     if (socket) socket.leave(pin);
@@ -119,6 +118,10 @@ function removeUserFromLobby(userid, pin, socket) {
         const random = Math.floor(Math.random() * lobby.sockets.length);
         lobby.host = lobby.sockets[random];
         io.to(lobby.host).emit("isHost", true);
+    }
+
+    if (removeScore) {
+        lobby.scores = lobby.scores.filter((score) => score.id !== userid);
     }
 
     io.to(pin).emit("users", getUsersInLobby(pin));
@@ -215,14 +218,9 @@ io.on('connection', (socket) => {
 
         if (data.started) {
             let articleToGo;
-            let route;
-            let clicks;
-            const socketPage = socketPages.get(socket.userid);
-            if (socketPage && socketPage.gameId === pin) {
-                articleToGo = socketPage.page;
-                route = socketPage.route;
-                clicks = socketPage.clicks;
-
+            const userScore = userScores.get(`${socket.userid}-${pin}`);
+            if (userScore) {
+                articleToGo = userScore.currentPage;
             } else {
                 articleToGo = data.sourceArticle;
             }
@@ -235,9 +233,13 @@ io.on('connection', (socket) => {
         if (!socket.name) return socket.emit("noName");
 
         const score = userScores.get(`${socket.userid}-${pin}`);
+
+        const route = score?.route ?? [];
+        const routeString = route.join(" -> ");
+
         socket.emit("route", {
-            route: score?.route ?? "",
-            clicks: score?.clicks ?? 0
+            route: routeString,
+            clicks: route.length,
         });
 
     });
@@ -314,9 +316,6 @@ io.on('connection', (socket) => {
         lobby.started = true;
         lobby.startTime = Date.now() + 3000;
 
-        lobbies.set(pin, lobby);
-
-
         io.to(pin).emit
             ("start", "/wiki/" + lobby.sourceArticle + "?lang=" + lobby.language + "&gameId=" + pin);
 
@@ -357,7 +356,7 @@ io.on('connection', (socket) => {
         if (check.id !== socket.userid) return socket.emit("checkNavigationError", "This check is not for you!");
         if (error) {
             if (check.i > 4) {
-                removeUserFromLobby(check.targetUser, check.pin);
+                removeUserFromLobby(check.targetUser, check.pin, true);
                 checkNavigation.delete(id);
                 io.to(check.targetUser).emit("cheater");
             }
@@ -367,7 +366,7 @@ io.on('connection', (socket) => {
         if (result === false) {
             if (check.i < 2) return assignCheck(check); //sure bout that?
             //kick user for cheating
-            removeUserFromLobby(check.targetUser, check.pin);
+            removeUserFromLobby(check.targetUser, check.pin, true);
             checkNavigation.delete(id);
             io.to(check.targetUser).emit("cheater");
         }
@@ -377,12 +376,14 @@ io.on('connection', (socket) => {
     socket.on("pageNavigation", (data) => {
         if (!socket.name) return socket.emit("noName");
 
-        socketPages.set(socket.userid, data);
         const score = userScores.get(`${socket.userid}-${data.gameId}`);
         const lobby = lobbies.get(data.gameId);
 
 
         if (!lobby) return socket.emit("pageNavigationError", "This game does not exist!");
+
+        console.log(data.page, lobby, score)
+
         if (data.page === lobby?.sourceArticle) return; //if just starting, don't count
         if (data.page === score?.currentPage) return; //dont count refresh dingen
 
@@ -407,7 +408,6 @@ io.on('connection', (socket) => {
                 targetUser: socket.userid,
                 pin: data.gameId,
                 i: 0,
-
                 from: score?.currentPage ?? lobby.sourceArticle,
                 to: data.page,
                 redirectedFrom: data.redirectedFrom,
@@ -415,47 +415,40 @@ io.on('connection', (socket) => {
             });
         }
 
-        const clicks = score?.clicks ?? 0;
+        const route = score?.route ?? [];
 
+        route.push(data.page.replaceAll("_", " "));
+
+
+
+        if (data.page === lobby.destinationArticle) {
+            const routeString = `${lobby.sourceArticle.replaceAll("_", " ")} -> ${route.join(" -> ")} 🏁`;
+            if (!lobby.scores) lobby.scores = [];
+            lobby.scores.push({
+                id: socket.userid,
+                name: socket.name,
+                clicks: route.length,
+                route: routeString,
+                time: Date.now(),
+            });
+
+            lobbies.set(data.gameId, lobby);
+
+            sendLeaderboaard(data.gameId, socket);
+
+            socket.emit("gotoScores", data.gameId);
+        }
 
         userScores.set(`${socket.userid}-${data.gameId}`, {
-            clicks: clicks + 1,
-            route: `${!score?.route ? lobby.sourceArticle.replaceAll("_", " ") : score.route} -> ${data.page.replaceAll("_", " ")}`,
+            route,
             currentPage: data.page,
         });
 
-
-
     });
 
-    socket.on("score", (data) => {
-        if (!socket.name) return socket.emit("noName");
-        if (!data) return socket.emit("scoreError", "No gameId provided!");
 
-        // if (!data.clicks || !data.route) return socket.emit("scoreError", "No clicks or route provided!");
 
-        const lobby = lobbies.get(data);
-        if (!lobby) return socket.emit("scoreError", "This game does not exist!");
-
-        if (!lobby.scores) lobby.scores = [];
-
-        const score = userScores.get(`${socket.userid}-${data}`);
-
-        lobby.scores.push({
-            id: socket.userid,
-            name: socket.name,
-            //include the click to the target page
-            clicks: (score?.clicks || 0) + 1,
-            route: `${score?.route ?? lobby.sourceArticle} -> ${lobby.destinationArticle.replaceAll("_", " ")} 🏁`,
-            time: Date.now(),
-        });
-
-        sendLeaderboaard(data, socket);
-
-        socket.emit("gotoScores", data);
-    });
-
-    socket.on("giveUp", ({ id, route }) => {
+    socket.on("giveUp", ({ id }) => {
         const pin = id;
 
         if (!socket.name) return socket.emit("noName");
@@ -465,11 +458,16 @@ io.on('connection', (socket) => {
         if (!lobby) return socket.emit("giveUpError", "This game does not exist!");
         if (!lobby.scores) lobby.scores = [];
 
+        const score = userScores.get(`${socket.userid}-${pin}`);
+
+        const route = score?.route ?? [];
+        const routeString = `${lobby.sourceArticle.replaceAll("_", " ")} -> ${route.join(" -> ")} 🏳️`;
+
         lobby.scores.push({
             id: socket.userid,
             name: socket.name,
             clicks: "DNF",
-            route,
+            route: routeString,
             time: Date.now(),
         });
 
