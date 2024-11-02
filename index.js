@@ -1,3 +1,6 @@
+const twitchId = "jxxx6710z7xqpz07q7ckry15sbljdh";
+const twitchSecret = "tr2iojte7521z1evpni3uxks0afq1j";
+
 const { Server } = require('socket.io');
 const { createServer } = require('http');
 
@@ -15,6 +18,33 @@ const userScores = new Map();
 const checkNavigation = new Map();
 
 const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+let twitchTokenCache;
+
+async function twitchFetch(url) {
+    if (!twitchTokenCache || Date.now() > twitchTokenCache.expires_in * 1000) {
+        const response = await fetch("https://id.twitch.tv/oauth2/token", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+                'client_id': twitchId,
+                'client_secret': twitchSecret,
+                'grant_type': 'client_credentials'
+            })
+        });
+        twitchTokenCache = await response.json();
+    }
+    console.log(twitchTokenCache)
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${twitchTokenCache.access_token}`,
+            'Client-ID': twitchId
+        }
+    });
+    return await response.json();
+}
 
 function randomString(length) {
     let result = '';
@@ -539,6 +569,13 @@ io.on('connection', (socket) => {
 
 
 
+    });
+
+    socket.on("streamers", async () => {
+        const response = await twitchFetch("https://api.twitch.tv/helix/streams?game_id=1885147094&first=5");
+        const ids = response.data.map((streamer) => streamer.user_login);
+
+        socket.emit("streamers", ids);
     });
 
 
